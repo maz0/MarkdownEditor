@@ -1,0 +1,16 @@
+Icon generation parameters (confirmed correct size in Dock):
+
+Source:     icon_green_nobg.png (1408x768, background removed via flood-fill)
+Centroid:   (704, 384) — exact centre of source image
+Crop:       670x670 px square centred on centroid
+Canvas fill: ~80% (79.7% wide, 82.0% tall) at 1024x1024
+Result:     MarkdownEditor.icns (all sizes 16→1024 + @2x)
+
+To regenerate after source changes:
+  python3 icon_build.py   (or follow the Makefile)
+
+Crop size guide:
+  768px → 69.5% fill (too small)
+  670px → 80%   fill (correct ✓)
+  560px → ~95%  fill (edge-to-edge, Apple HIG ideal)
+  Each ±10px ≈ ±1.5% fill change

@@ -1,0 +1,6 @@
+MarkdownEditor.app/
+*.iconset/
+.DS_Store
+icon_green_nobg.png
+icon_blue_nobg.png
+icon_master.png
