@@ -45,6 +45,7 @@ static NSArray<SlashItem *> *allItems(void) {
             [SlashItem sep],
             [SlashItem label:@"Link"          prefix:@"["       suffix:@"](url)" placeholder:@"link text"],
             [SlashItem label:@"Image"         prefix:@"!["      suffix:@"](url)" placeholder:@"alt text"],
+            [SlashItem label:@"Video"         prefix:@"!["      suffix:@"](file.mp4)" placeholder:@"title"],
         ];
     });
     return items;
