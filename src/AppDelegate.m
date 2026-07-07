@@ -197,6 +197,10 @@
                                                   action:@selector(togglePreview:)
                                            keyEquivalent:@"p"];
     previewItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    NSMenuItem *outlineItem = [viewMenu addItemWithTitle:@"Outline"
+                                                  action:@selector(toggleOutline:)
+                                           keyEquivalent:@"o"];
+    outlineItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [viewMenu addItem:[NSMenuItem separatorItem]];
     [viewMenu addItemWithTitle:@"Dark Appearance" action:@selector(toggleDarkMode:) keyEquivalent:@""];
     viewItem.submenu = viewMenu;

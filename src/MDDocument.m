@@ -7,7 +7,8 @@
 #import <WebKit/WebKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-@interface MDDocument () <SlashMenuDelegate, WKNavigationDelegate, MDTextViewDropDelegate>
+@interface MDDocument () <SlashMenuDelegate, WKNavigationDelegate, MDTextViewDropDelegate,
+                          NSTableViewDataSource, NSTableViewDelegate>
 @end
 
 @implementation MDDocument {
@@ -50,6 +51,13 @@
     WKWebView           *_exportWebView;
     NSWindow            *_exportWindow;
     NSURL               *_exportPDFURL;
+
+    // Outline sidebar
+    NSScrollView        *_outlineScroll;
+    NSTableView         *_outlineTable;
+    NSArray<NSDictionary *> *_outlineItems;
+    BOOL                 _outlineVisible;
+    BOOL                 _outlineReloading;
 }
 
 // ─── NSDocument lifecycle ────────────────────────────────────────────────────
@@ -129,6 +137,27 @@
     _splitView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _splitView.vertical         = YES;
     _splitView.dividerStyle     = NSSplitViewDividerStyleThin;
+
+    // ── Outline sidebar (hidden until toggled) ────────────────────────────
+    _outlineTable = [[NSTableView alloc] initWithFrame:NSZeroRect];
+    NSTableColumn *col = [[NSTableColumn alloc] initWithIdentifier:@"heading"];
+    col.resizingMask = NSTableColumnAutoresizingMask;
+    [_outlineTable addTableColumn:col];
+    _outlineTable.headerView               = nil;
+    _outlineTable.rowHeight                = 22;
+    _outlineTable.dataSource               = self;
+    _outlineTable.delegate                 = self;
+    _outlineTable.style                    = NSTableViewStyleSourceList;
+    _outlineTable.allowsEmptySelection     = YES;
+
+    _outlineScroll = [NSScrollView new];
+    _outlineScroll.hasVerticalScroller = YES;
+    _outlineScroll.autohidesScrollers  = YES;
+    _outlineScroll.borderType          = NSNoBorder;
+    _outlineScroll.documentView        = _outlineTable;
+    _outlineScroll.hidden              = YES;
+    [_splitView addSubview:_outlineScroll];
+    [_splitView setHoldingPriority:NSLayoutPriorityDefaultLow + 10 forSubviewAtIndex:0];
 
     // ── Editor ────────────────────────────────────────────────────────────
     NSScrollView *scroll = [NSScrollView new];
@@ -415,6 +444,7 @@
     [self checkSlashTrigger];
     if (_focusMode) [self centerCaretLine];
     if (_previewVisible) [self schedulePreviewUpdate];
+    [self rebuildOutline];
 }
 
 // Typewriter scrolling: while writing in focus mode, keep the caret line
@@ -598,13 +628,101 @@
     _previewVisible = !_previewVisible;
     _webView.hidden = !_previewVisible;
     [_splitView adjustSubviews];
+    // Divider 1: editor/preview (divider 0 is the outline sidebar)
     if (_previewVisible) {
-        [_splitView setPosition:_splitView.frame.size.width * 0.55 ofDividerAtIndex:0];
+        [_splitView setPosition:_splitView.frame.size.width * 0.55 ofDividerAtIndex:1];
         [self updatePreview];
     } else {
-        [_splitView setPosition:_splitView.frame.size.width ofDividerAtIndex:0];
+        [_splitView setPosition:_splitView.frame.size.width ofDividerAtIndex:1];
     }
     [self applyFocusModeInset];
+}
+
+// ─── Outline sidebar ─────────────────────────────────────────────────────────
+
+- (void)toggleOutline:(id)sender {
+    _outlineVisible = !_outlineVisible;
+    _outlineScroll.hidden = !_outlineVisible;
+    [_splitView adjustSubviews];
+    if (_outlineVisible) {
+        [self rebuildOutline];
+        [_splitView setPosition:180 ofDividerAtIndex:0];
+    } else {
+        [_splitView setPosition:0 ofDividerAtIndex:0];
+    }
+    [self applyFocusModeInset];
+}
+
+- (void)rebuildOutline {
+    if (!_outlineVisible) return;
+    NSString *text = _textView.string ?: @"";
+    NSMutableArray<NSDictionary *> *items = [NSMutableArray new];
+    __block BOOL inFence = NO;
+    [text enumerateSubstringsInRange:NSMakeRange(0, text.length)
+                             options:NSStringEnumerationByLines | NSStringEnumerationSubstringNotRequired
+                          usingBlock:^(NSString *sub, NSRange lineRange, NSRange enclosing, BOOL *stop) {
+        NSString *line = [text substringWithRange:lineRange];
+        if ([line hasPrefix:@"```"] || [line hasPrefix:@"~~~"]) { inFence = !inFence; return; }
+        if (inFence) return;
+        NSUInteger h = 0;
+        while (h < MIN(6, line.length) && [line characterAtIndex:h] == '#') h++;
+        if (h > 0 && h < line.length && [line characterAtIndex:h] == ' ') {
+            [items addObject:@{
+                @"title":    [line substringFromIndex:h + 1],
+                @"level":    @(h),
+                @"location": @(lineRange.location),
+            }];
+        }
+    }];
+    if ([items isEqualToArray:_outlineItems]) return;
+    _outlineItems = items;
+    _outlineReloading = YES;
+    [_outlineTable reloadData];
+    _outlineReloading = NO;
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tv {
+    return (NSInteger)_outlineItems.count;
+}
+
+- (NSView *)tableView:(NSTableView *)tv
+   viewForTableColumn:(NSTableColumn *)column
+                  row:(NSInteger)row {
+    NSTextField *label = [tv makeViewWithIdentifier:@"outlineCell" owner:self];
+    if (!label) {
+        label = [NSTextField labelWithString:@""];
+        label.identifier    = @"outlineCell";
+        label.lineBreakMode = NSLineBreakByTruncatingTail;
+    }
+    NSDictionary *item = _outlineItems[(NSUInteger)row];
+    NSUInteger level   = [item[@"level"] unsignedIntegerValue];
+    label.stringValue  = item[@"title"];
+    label.font = level == 1
+        ? [NSFont systemFontOfSize:12 weight:NSFontWeightSemibold]
+        : [NSFont systemFontOfSize:12];
+    label.textColor = level <= 2 ? NSColor.labelColor : NSColor.secondaryLabelColor;
+
+    NSView *cell = [NSView new];
+    [cell addSubview:label];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [NSLayoutConstraint activateConstraints:@[
+        [label.leadingAnchor constraintEqualToAnchor:cell.leadingAnchor
+                                            constant:4 + 12.0 * (CGFloat)(level - 1)],
+        [label.trailingAnchor constraintEqualToAnchor:cell.trailingAnchor constant:-4],
+        [label.centerYAnchor constraintEqualToAnchor:cell.centerYAnchor],
+    ]];
+    return cell;
+}
+
+- (void)tableViewSelectionDidChange:(NSNotification *)note {
+    if (_outlineReloading) return;
+    NSInteger row = _outlineTable.selectedRow;
+    if (row < 0 || (NSUInteger)row >= _outlineItems.count) return;
+    NSUInteger loc = [_outlineItems[(NSUInteger)row][@"location"] unsignedIntegerValue];
+    loc = MIN(loc, _textView.string.length);
+    [_textView setSelectedRange:NSMakeRange(loc, 0)];
+    [_textView scrollRangeToVisible:NSMakeRange(loc, 0)];
+    [self.windowControllers.firstObject.window makeFirstResponder:_textView];
 }
 
 - (void)schedulePreviewUpdate {
@@ -797,6 +915,8 @@
         item.state = _focusMode ? NSControlStateValueOn : NSControlStateValueOff;
     if (item.action == @selector(togglePreview:))
         item.state = _previewVisible ? NSControlStateValueOn : NSControlStateValueOff;
+    if (item.action == @selector(toggleOutline:))
+        item.state = _outlineVisible ? NSControlStateValueOn : NSControlStateValueOff;
     return YES;
 }
 

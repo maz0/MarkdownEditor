@@ -8,16 +8,20 @@ A lightweight, native macOS Markdown editor written in Objective-C. No Electron,
 
 - **Tabs** — open multiple files side by side (Cmd+T)
 - **Syntax highlighting** — headings, bold, italic, code, links, blockquotes coloured live as you type
-- **Live preview** — split-pane WebKit preview with dark mode support (Cmd+Shift+P)
+- **Live preview** — split-pane WebKit preview with dark mode support (Cmd+Shift+P); scroll position survives edits, local images render, task lists become checkboxes
 - **Mermaid diagrams** — ` ```mermaid ` code blocks render as diagrams in the preview, fully offline (bundled mermaid v10)
-- **Focus mode** — wide margins, centred 680pt column for distraction-free writing (Cmd+Shift+F)
+- **Code highlighting in preview** — fenced code blocks coloured by bundled highlight.js
+- **Outline sidebar** — jump between headings (Cmd+Shift+O)
+- **Export** — save as self-contained HTML or PDF from the File menu
+- **Image drag-and-drop** — drop an image file into the editor; it's copied beside the document and linked
+- **Focus mode** — wide margins, centred 680pt column, typewriter scrolling (Cmd+Shift+F)
 - **Slash commands** — type `/` on a blank line for a popup menu of Markdown templates (headings, lists, code blocks, links…)
 - **Keyboard shortcuts** — Cmd+B bold, Cmd+I italic, Cmd+K link
 - **Auto-list continuation** — press Return inside a list and the next bullet/number is added automatically
 - **Font size control** — Cmd++ / Cmd+- / Cmd+0 to reset
 - **Word & character count** — live status bar showing words, chars, line and column
 - **Dark / light mode** — toggle from the View menu, preference remembered across restarts
-- **Open, save, rename** — full NSDocument integration including dirty-state tracking and native save dialogs
+- **Open, save, rename** — full NSDocument integration with autosave, Versions, and an Open Recent menu
 - **Update notifications** — checks GitHub releases once a day and offers new versions; manual check via Markdown Editor → Check for Updates…
 
 ## Requirements
@@ -87,6 +91,7 @@ MarkdownEditor/
 | Reset font | Cmd+0 |
 | Focus mode | Cmd+Shift+F |
 | Preview | Cmd+Shift+P |
+| Outline | Cmd+Shift+O |
 
 ## License
 
