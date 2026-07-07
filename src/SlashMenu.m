@@ -34,6 +34,7 @@ static NSArray<SlashItem *> *allItems(void) {
             [SlashItem sep],
             [SlashItem label:@"Bullet list"   prefix:@"- "      suffix:@""       placeholder:@"Item"],
             [SlashItem label:@"Numbered list" prefix:@"1. "     suffix:@""       placeholder:@"Item"],
+            [SlashItem label:@"Task list"     prefix:@"- [ ] "  suffix:@""       placeholder:@"To-do"],
             [SlashItem label:@"Blockquote"    prefix:@"> "      suffix:@""       placeholder:@"Quote"],
             [SlashItem label:@"Code block"    prefix:@"```\n"   suffix:@"\n```"  placeholder:@""],
             [SlashItem label:@"Table"

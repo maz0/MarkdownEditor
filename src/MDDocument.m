@@ -517,13 +517,19 @@
         NSString *bullet = [line substringWithRange:[um rangeAtIndex:2]];
         NSString *rest   = [line substringFromIndex:NSMaxRange(um.range)];
         NSRange ins      = NSMakeRange(cursor, 0);
-        if (rest.length == 0) {
+        BOOL isTask      = [rest hasPrefix:@"[ ] "] || [rest hasPrefix:@"[x] "] || [rest hasPrefix:@"[X] "];
+        BOOL emptyTask   = [rest isEqualToString:@"[ ]"] || [rest isEqualToString:@"[ ] "] ||
+                           [rest isEqualToString:@"[x]"] || [rest isEqualToString:@"[x] "] ||
+                           [rest isEqualToString:@"[X]"] || [rest isEqualToString:@"[X] "];
+        if (rest.length == 0 || emptyTask) {
             NSRange del = NSMakeRange(lineRange.location, cursor - lineRange.location);
             if ([_textView shouldChangeTextInRange:del replacementString:@""])
                 { [_textView replaceCharactersInRange:del withString:@""]; [_textView didChangeText]; }
             return YES;
         }
-        NSString *cont = [NSString stringWithFormat:@"\n%@%@ ", indent, bullet];
+        NSString *cont = isTask
+            ? [NSString stringWithFormat:@"\n%@%@ [ ] ", indent, bullet]
+            : [NSString stringWithFormat:@"\n%@%@ ", indent, bullet];
         if ([_textView shouldChangeTextInRange:ins replacementString:cont])
             { [_textView replaceCharactersInRange:ins withString:cont]; [_textView didChangeText]; }
         return YES;
