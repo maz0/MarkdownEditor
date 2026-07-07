@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.local.markdowneditor</string>
     <key>CFBundleVersion</key>
-    <string>1.1</string>
+    <string>0.3</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1</string>
+    <string>0.3</string>
     <key>CFBundleExecutable</key>
     <string>MarkdownEditor</string>
     <key>NSPrincipalClass</key>
