@@ -18,6 +18,7 @@ A lightweight, native macOS Markdown editor written in Objective-C. No Electron,
 - **Word & character count** — live status bar showing words, chars, line and column
 - **Dark / light mode** — toggle from the View menu, preference remembered across restarts
 - **Open, save, rename** — full NSDocument integration including dirty-state tracking and native save dialogs
+- **Update notifications** — checks GitHub releases once a day and offers new versions; manual check via Markdown Editor → Check for Updates…
 
 ## Requirements
 
@@ -42,6 +43,16 @@ Other targets:
 make build   # compile only, produces MarkdownEditor.app
 make clean   # delete the built app
 ```
+
+## Releasing
+
+Installed apps poll the latest GitHub release once a day and notify the user
+when a newer version appears. To publish an update:
+
+1. Bump `CFBundleShortVersionString` (and `CFBundleVersion`) in `Info.plist`
+2. Commit
+3. `make release` — builds, tags `v<version>`, pushes, and creates a GitHub
+   release with the zipped app attached (requires the `gh` CLI)
 
 ## Project structure
 

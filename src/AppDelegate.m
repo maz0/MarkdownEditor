@@ -1,11 +1,16 @@
 #import "AppDelegate.h"
+#import "MDUpdateChecker.h"
 
-@implementation AppDelegate
+@implementation AppDelegate {
+    MDUpdateChecker *_updateChecker;
+}
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
+    _updateChecker = [MDUpdateChecker new];  // before buildMenuBar: menu item targets it
     [self buildMenuBar];
     if ([[NSUserDefaults standardUserDefaults] boolForKey:@"darkMode"])
         NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    [_updateChecker checkAutomatically];
     // Don't manually open a new document here — applicationShouldOpenUntitledFile:
     // is called AFTER file-open Apple Events are processed, so it correctly
     // opens a blank doc only when the app wasn't launched by double-clicking a file.
@@ -52,6 +57,11 @@
     NSMenu *appMenu = [NSMenu new];
     [appMenu addItemWithTitle:@"About Markdown Editor"
                        action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *updates = [appMenu addItemWithTitle:@"Check for Updates…"
+                                             action:@selector(checkForUpdates:)
+                                      keyEquivalent:@""];
+    updates.target = _updateChecker;
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItemWithTitle:@"Hide Markdown Editor"
                        action:@selector(hide:) keyEquivalent:@"h"];
