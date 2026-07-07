@@ -16,6 +16,7 @@ A lightweight, native macOS Markdown editor written in Objective-C. No Electron,
 - **Image drag-and-drop** — drop an image file into the editor; it's copied beside the document and linked
 - **Focus mode** — wide margins, centred 680pt column, typewriter scrolling (Cmd+Shift+F)
 - **Slash commands** — type `/` on a blank line for a popup menu of Markdown templates (headings, lists, code blocks, links…)
+- **User templates** — .md files in the templates folder (File → Open Templates Folder) appear in the slash menu; `{{date}}`, `{{time}}`, `{{weekday}}`, `{{filename}}` fill in at insertion and `{{cursor}}` places the caret. Ships with Meeting note, Daily note, and Weekly review starters
 - **Keyboard shortcuts** — Cmd+B bold, Cmd+I italic, Cmd+K link
 - **Auto-list continuation** — press Return inside a list and the next bullet/number is added automatically
 - **Font size control** — Cmd++ / Cmd+- / Cmd+0 to reset

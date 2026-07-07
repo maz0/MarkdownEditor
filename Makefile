@@ -4,7 +4,8 @@ CFLAGS := -fobjc-arc -Wall -Wextra -mmacosx-version-min=12.0 -isysroot $(SDK)
 LFLAGS := -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers
 SRCS   := src/main.m src/AppDelegate.m src/MDDocument.m src/SlashMenu.m \
            src/MDSyntaxHighlighter.m src/MDPreview.m src/MDUpdateChecker.m \
-           src/MDSchemeHandler.m src/MDTextView.m src/MDFileSearch.m
+           src/MDSchemeHandler.m src/MDTextView.m src/MDFileSearch.m \
+           src/MDTemplates.m
 APP    := MarkdownEditor.app
 BIN    := $(APP)/Contents/MacOS/MarkdownEditor
 

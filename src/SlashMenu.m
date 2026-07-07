@@ -1,4 +1,5 @@
 #import "SlashMenu.h"
+#import "MDTemplates.h"
 
 // ─── Item model ───────────────────────────────────────────────────────────────
 
@@ -19,7 +20,7 @@
 + (instancetype)sep { SlashItem *i = [SlashItem new]; i.separator = YES; return i; }
 @end
 
-static NSArray<SlashItem *> *allItems(void) {
+static NSArray<SlashItem *> *builtinItems(void) {
     static NSArray *items;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -59,8 +60,32 @@ static NSArray<SlashItem *> *allItems(void) {
 @implementation SlashMenu {
     NSPanel               *_panel;
     NSTableView           *_table;
+    NSArray<SlashItem *>  *_allItems;
     NSArray<SlashItem *>  *_filtered;
     NSInteger              _selectedIndex;
+}
+
+// Built-ins plus one entry per template file. Re-read on every menu open so
+// edits to the templates folder show up immediately. Variables ({{date}}…)
+// stay raw here — the document substitutes them at insertion time.
+- (NSArray<SlashItem *> *)buildItems {
+    NSMutableArray<SlashItem *> *items = [builtinItems() mutableCopy];
+    NSArray<NSDictionary *> *templates = [MDTemplates load];
+    if (templates.count) [items addObject:[SlashItem sep]];
+    for (NSDictionary *t in templates) {
+        NSArray<NSString *> *parts = [t[@"content"]
+            componentsSeparatedByString:@"{{cursor}}"];
+        NSString *prefix = parts[0];
+        NSString *suffix = parts.count > 1
+            ? [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)]
+               componentsJoinedByString:@""]
+            : @"";
+        [items addObject:[SlashItem label:t[@"name"]
+                                   prefix:prefix
+                                   suffix:suffix
+                              placeholder:@""]];
+    }
+    return items;
 }
 
 static const CGFloat kPanelWidth  = 220;
@@ -135,6 +160,7 @@ static const CGFloat kPadding     = 4;
 // ─── Show / hide ──────────────────────────────────────────────────────────────
 
 - (void)showBelowRect:(NSRect)sr parentWindow:(NSWindow *)parent {
+    _allItems = [self buildItems];
     [self applyFilter:@""];
     if (_filtered.count == 0) return;
     [self refit];
@@ -168,10 +194,11 @@ static const CGFloat kPadding     = 4;
 }
 
 - (void)applyFilter:(NSString *)query {
-    if (query.length == 0) { _filtered = allItems(); return; }
+    if (!_allItems) _allItems = [self buildItems];
+    if (query.length == 0) { _filtered = _allItems; return; }
     NSMutableArray *out = [NSMutableArray new];
     SlashItem *pendingSep = nil;
-    for (SlashItem *it in allItems()) {
+    for (SlashItem *it in _allItems) {
         if (it.isSeparator) { pendingSep = it; continue; }
         if ([it.label rangeOfString:query options:NSCaseInsensitiveSearch].location != NSNotFound) {
             if (pendingSep && out.count) [out addObject:pendingSep];

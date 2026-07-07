@@ -3,6 +3,7 @@
 #import "MDSyntaxHighlighter.h"
 #import "MDPreview.h"
 #import "MDSchemeHandler.h"
+#import "MDTemplates.h"
 #import "MDTextView.h"
 #import <WebKit/WebKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -995,6 +996,10 @@
    didSelectPrefix:(NSString *)prefix
             suffix:(NSString *)suffix
        placeholder:(NSString *)placeholder {
+    // Template variables resolve at insertion time (built-ins pass through)
+    NSString *fname = [self.displayName stringByDeletingPathExtension];
+    prefix = [MDTemplates substituteVariables:prefix filename:fname];
+    suffix = [MDTemplates substituteVariables:suffix filename:fname];
     NSUInteger cursor   = _textView.selectedRange.location;
     NSRange    replace  = NSMakeRange(_slashStart, cursor - _slashStart);
     NSString  *inserted = [NSString stringWithFormat:@"%@%@%@", prefix, placeholder, suffix];

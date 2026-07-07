@@ -1,6 +1,7 @@
 #import "AppDelegate.h"
 #import "MDUpdateChecker.h"
 #import "MDFileSearch.h"
+#import "MDTemplates.h"
 
 @interface AppDelegate () <NSMenuDelegate>
 @end
@@ -16,9 +17,16 @@
     [_fileSearch show];
 }
 
+- (void)openTemplatesFolder:(id)sender {
+    [MDTemplates ensureSeeded];
+    [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:
+        @[[MDTemplates folderURL]]];
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     _updateChecker = [MDUpdateChecker new];  // before buildMenuBar: menu item targets it
     [self buildMenuBar];
+    [MDTemplates ensureSeeded];
     if ([[NSUserDefaults standardUserDefaults] boolForKey:@"darkMode"])
         NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     [_updateChecker checkAutomatically];
@@ -149,6 +157,11 @@
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Export as HTML…" action:@selector(exportHTML:) keyEquivalent:@""];
     [fileMenu addItemWithTitle:@"Export as PDF…"  action:@selector(exportPDF:)  keyEquivalent:@""];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *tplItem = [fileMenu addItemWithTitle:@"Open Templates Folder"
+                                              action:@selector(openTemplatesFolder:)
+                                       keyEquivalent:@""];
+    tplItem.target = self;
     fileItem.submenu = fileMenu;
     [bar addItem:fileItem];
 
