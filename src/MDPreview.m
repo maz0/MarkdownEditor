@@ -2,15 +2,96 @@
 
 @implementation MDPreview
 
-// ─── Public entry point ───────────────────────────────────────────────────────
+// ─── Static full document (export, tests) ────────────────────────────────────
 
 + (NSString *)htmlFromMarkdown:(NSString *)md {
+    BOOL usedMermaid = NO, usedCode = NO;
+    NSString *body = [self bodyFromMarkdown:md usedMermaid:&usedMermaid usedCode:&usedCode];
+
+    // Engines are inlined rather than referenced by URL: WKWebView does not
+    // grant loadHTMLString: content read access to file:// subresources, and
+    // an exported file must be self-contained anyway.
+    NSMutableString *tail = [NSMutableString new];
+    if (usedMermaid && [self mermaidEngineSource]) {
+        [tail appendFormat:
+            @"<script>%@</script>"
+            @"<script>mermaid.initialize({startOnLoad:true,securityLevel:'loose',"
+            @"theme:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'});"
+            @"</script>", [self mermaidEngineSource]];
+    }
+    if (usedCode && [self hljsEngineSource]) {
+        [tail appendFormat:@"<script>%@</script><script>hljs.highlightAll();</script>",
+            [self hljsEngineSource]];
+    }
+
+    return [NSString stringWithFormat:@"<!DOCTYPE html><html><head>"
+        @"<meta charset=\"utf-8\">"
+        @"<style>%@</style>"
+        @"</head><body>%@%@</body></html>",
+        [self css], body, tail];
+}
+
+// ─── Live preview shell ──────────────────────────────────────────────────────
+// Loaded into the WKWebView once; subsequent edits call window.mdUpdate(html,
+// base) so the page never navigates — scroll position survives and mermaid/
+// highlight re-run only on the fresh nodes.
+
++ (NSString *)shellHTML {
+    NSString *mermaid = [self mermaidEngineSource] ?: @"";
+    NSString *hljs    = [self hljsEngineSource] ?: @"";
+    return [NSString stringWithFormat:@"<!DOCTYPE html><html><head>"
+        @"<meta charset=\"utf-8\">"
+        @"<base href=\"\">"
+        @"<style>%@</style>"
+        @"</head><body><div id=\"content\"></div>"
+        @"<script>%@</script>"
+        @"<script>%@</script>"
+        @"<script>"
+        @"var dark=matchMedia('(prefers-color-scheme:dark)');"
+        @"function mmInit(){mermaid.initialize({startOnLoad:false,securityLevel:'loose',"
+        @"theme:dark.matches?'dark':'default'});}"
+        @"mmInit();"
+        @"window.__last='';"
+        @"window.mdUpdate=function(html,base){"
+        @"if(base!=null)document.querySelector('base').href=base;"
+        @"window.__last=html;"
+        @"document.getElementById('content').innerHTML=html;"
+        @"document.querySelectorAll('#content pre code').forEach(function(el){hljs.highlightElement(el);});"
+        @"try{mermaid.run({querySelector:'#content .mermaid'});}catch(e){}"
+        @"};"
+        @"dark.addEventListener('change',function(){mmInit();window.mdUpdate(window.__last);});"
+        @"</script></body></html>",
+        [self css], mermaid, hljs];
+}
+
++ (NSString *)bodyFromMarkdown:(NSString *)md {
+    BOOL m, c;
+    return [self bodyFromMarkdown:md usedMermaid:&m usedCode:&c];
+}
+
++ (NSString *)jsStringLiteral:(NSString *)s {
+    NSMutableString *r = [s mutableCopy];
+    [r replaceOccurrencesOfString:@"\\" withString:@"\\\\" options:0 range:NSMakeRange(0, r.length)];
+    [r replaceOccurrencesOfString:@"\"" withString:@"\\\"" options:0 range:NSMakeRange(0, r.length)];
+    [r replaceOccurrencesOfString:@"\n" withString:@"\\n"  options:0 range:NSMakeRange(0, r.length)];
+    [r replaceOccurrencesOfString:@"\r" withString:@"\\r"  options:0 range:NSMakeRange(0, r.length)];
+    [r replaceOccurrencesOfString:@" " withString:@"\\u2028" options:0 range:NSMakeRange(0, r.length)];
+    [r replaceOccurrencesOfString:@" " withString:@"\\u2029" options:0 range:NSMakeRange(0, r.length)];
+    return [NSString stringWithFormat:@"\"%@\"", r];
+}
+
+// ─── Markdown → body HTML ────────────────────────────────────────────────────
+
++ (NSString *)bodyFromMarkdown:(NSString *)md
+                   usedMermaid:(BOOL *)usedMermaid
+                      usedCode:(BOOL *)usedCode {
+    *usedMermaid = NO;
+    *usedCode    = NO;
     NSMutableString *body = [NSMutableString new];
     NSArray<NSString *> *lines = [md componentsSeparatedByString:@"\n"];
 
     BOOL inFence   = NO;
     BOOL inMermaid = NO;   // current fence is a ```mermaid block
-    BOOL usedMermaid = NO; // at least one mermaid block seen → load engine
     BOOL inUL     = NO;
     BOOL inOL     = NO;
     BOOL inTable  = NO;
@@ -31,9 +112,10 @@
                 lang = [lang stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
                 if ([lang caseInsensitiveCompare:@"mermaid"] == NSOrderedSame) {
                     inMermaid = YES;
-                    usedMermaid = YES;
+                    *usedMermaid = YES;
                     [body appendString:@"<pre class=\"mermaid\">"];
                 } else {
+                    *usedCode = YES;
                     NSString *cls = lang.length ? [NSString stringWithFormat:@" class=\"language-%@\"", [self esc:lang]] : @"";
                     [body appendFormat:@"<pre><code%@>", cls];
                 }
@@ -103,7 +185,16 @@
                 if (inTable) { [body appendString:@"</tbody></table>\n"]; inTable = NO; }
                 if (!inUL) { [body appendString:@"<ul>\n"]; inUL = YES; }
                 NSString *item = [raw substringWithRange:[m rangeAtIndex:2]];
-                [body appendFormat:@"<li>%@</li>\n", [self inline:item]];
+                // GFM task list: - [ ] todo / - [x] done
+                if ([item hasPrefix:@"[ ] "]) {
+                    [body appendFormat:@"<li class=\"task\"><input type=\"checkbox\" disabled> %@</li>\n",
+                        [self inline:[item substringFromIndex:4]]];
+                } else if ([item hasPrefix:@"[x] "] || [item hasPrefix:@"[X] "]) {
+                    [body appendFormat:@"<li class=\"task\"><input type=\"checkbox\" checked disabled> %@</li>\n",
+                        [self inline:[item substringFromIndex:4]]];
+                } else {
+                    [body appendFormat:@"<li>%@</li>\n", [self inline:item]];
+                }
                 i++; continue;
             }
         }
@@ -164,29 +255,11 @@
     [self closeLists:&inUL ol:&inOL table:&inTable into:body];
     if (inFence) [body appendString:inMermaid ? @"</pre>\n" : @"</code></pre>\n"];
 
-    // Load the mermaid engine only when the document actually uses it.
-    // The source is inlined rather than referenced by URL: WKWebView does not
-    // grant loadHTMLString: content read access to file:// subresources.
-    // Bundled mermaid is v10 — v11 needs a newer WebKit than macOS 12 ships.
-    NSString *mermaid = @"";
-    if (usedMermaid) {
-        NSString *engine = [self mermaidEngineSource];
-        if (engine)
-            mermaid = [NSString stringWithFormat:
-                @"<script>%@</script>"
-                @"<script>mermaid.initialize({startOnLoad:true,securityLevel:'loose',"
-                @"theme:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'});"
-                @"</script>", engine];
-    }
-
-    return [NSString stringWithFormat:@"<!DOCTYPE html><html><head>"
-        @"<meta charset=\"utf-8\">"
-        @"<style>%@</style>"
-        @"</head><body>%@%@</body></html>",
-        [self css], body, mermaid];
+    return body;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Bundled JS engines ──────────────────────────────────────────────────────
+// Bundled mermaid is v10 — v11 needs a newer WebKit than macOS 12 ships.
 
 + (NSString *)mermaidEngineSource {
     static NSString *engine;
@@ -200,6 +273,21 @@
     });
     return engine;
 }
+
++ (NSString *)hljsEngineSource {
+    static NSString *engine;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSURL *url = [[NSBundle mainBundle] URLForResource:@"highlight.min" withExtension:@"js"];
+        if (url)
+            engine = [NSString stringWithContentsOfURL:url
+                                              encoding:NSUTF8StringEncoding
+                                                 error:nil];
+    });
+    return engine;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 + (void)flushPara:(NSMutableArray<NSString *> *)lines into:(NSMutableString *)out {
     if (!lines.count) return;
@@ -278,14 +366,6 @@
     @"body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
     @"font-size:15px;line-height:1.75;max-width:740px;margin:0 auto;"
     @"padding:28px 36px 60px;color:#1d1d1f;background:#fff}"
-    @"@media(prefers-color-scheme:dark){"
-    @"body{color:#f0f0f0;background:#1c1c1e}"
-    @"pre,code{background:#2c2c2e!important;color:#ff9f0a}"
-    @"a{color:#0a84ff}"
-    @"th{background:#2c2c2e}"
-    @"td,th{border-color:#3a3a3c}"
-    @"blockquote{border-color:#0a84ff;color:#ababab}"
-    @"hr{border-color:#3a3a3c}}"
     @"h1,h2,h3,h4,h5,h6{line-height:1.25;margin:1.5em 0 .5em;font-weight:600}"
     @"h1{font-size:2em;border-bottom:1px solid #e5e5e5;padding-bottom:.3em}"
     @"h2{font-size:1.5em;border-bottom:1px solid #e5e5e5;padding-bottom:.2em}"
@@ -308,7 +388,39 @@
     @"hr{border:none;border-top:1px solid #e5e5e5;margin:1.5em 0}"
     @"img{max-width:100%;border-radius:4px}"
     @"del{color:#888}"
-    @"pre.mermaid{background:none!important;padding:0;text-align:center;overflow:visible}";
+    @"pre.mermaid{background:none!important;padding:0;text-align:center;overflow:visible}"
+    @"li.task{list-style:none;margin-left:-1.3em}"
+    @"li.task input{margin-right:.35em;vertical-align:-1px}"
+    // highlight.js theme, light (Tomorrow palette)
+    @".hljs-comment,.hljs-quote{color:#8e908c;font-style:italic}"
+    @".hljs-keyword,.hljs-selector-tag,.hljs-literal{color:#8959a8}"
+    @".hljs-string,.hljs-regexp,.hljs-addition{color:#718c00}"
+    @".hljs-number,.hljs-attr,.hljs-symbol,.hljs-bullet,.hljs-meta{color:#f5871f}"
+    @".hljs-title,.hljs-section,.hljs-name{color:#4271ae}"
+    @".hljs-type,.hljs-built_in,.hljs-variable,.hljs-template-variable,.hljs-params{color:#c82829}"
+    @".hljs-deletion{color:#c82829}"
+    @".hljs-emphasis{font-style:italic}"
+    @".hljs-strong{font-weight:700}"
+    // Dark overrides last: equal-specificity rules must follow the light ones
+    @"@media(prefers-color-scheme:dark){"
+    @"body{color:#f0f0f0;background:#1c1c1e}"
+    @"pre,code{background:#2c2c2e!important;color:#ff9f0a}"
+    @"pre code{color:#e8e8e8}"
+    @"a{color:#0a84ff}"
+    @"th{background:#2c2c2e}"
+    @"td,th{border-color:#3a3a3c}"
+    @"tr:nth-child(even){background:#232325}"
+    @"blockquote{border-color:#0a84ff;color:#ababab}"
+    @"hr{border-color:#3a3a3c}"
+    // highlight.js theme, dark (Tomorrow Night palette)
+    @".hljs-comment,.hljs-quote{color:#969896}"
+    @".hljs-keyword,.hljs-selector-tag,.hljs-literal{color:#b294bb}"
+    @".hljs-string,.hljs-regexp,.hljs-addition{color:#b5bd68}"
+    @".hljs-number,.hljs-attr,.hljs-symbol,.hljs-bullet,.hljs-meta{color:#de935f}"
+    @".hljs-title,.hljs-section,.hljs-name{color:#81a2be}"
+    @".hljs-type,.hljs-built_in,.hljs-variable,.hljs-template-variable,.hljs-params{color:#cc6666}"
+    @".hljs-deletion{color:#cc6666}"
+    @"}";
 }
 
 @end

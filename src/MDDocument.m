@@ -2,9 +2,10 @@
 #import "SlashMenu.h"
 #import "MDSyntaxHighlighter.h"
 #import "MDPreview.h"
+#import "MDSchemeHandler.h"
 #import <WebKit/WebKit.h>
 
-@interface MDDocument () <SlashMenuDelegate>
+@interface MDDocument () <SlashMenuDelegate, WKNavigationDelegate>
 @end
 
 @implementation MDDocument {
@@ -40,6 +41,7 @@
     WKWebView           *_webView;
     NSSplitView         *_splitView;
     BOOL                 _previewVisible;
+    BOOL                 _shellLoaded;
     NSTimer             *_previewTimer;
 }
 
@@ -159,8 +161,11 @@
     [_splitView addSubview:scroll];
 
     // ── Preview pane ──────────────────────────────────────────────────────
+    WKWebViewConfiguration *webCfg = [WKWebViewConfiguration new];
+    [webCfg setURLSchemeHandler:[MDSchemeHandler new] forURLScheme:@"mdpreview"];
     _webView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 400, 680)
-                                  configuration:[WKWebViewConfiguration new]];
+                                  configuration:webCfg];
+    _webView.navigationDelegate = self;
     _webView.hidden = YES;
     [_splitView addSubview:_webView];
 
@@ -345,6 +350,8 @@
     for (NSWindowController *wc in self.windowControllers) {
         wc.window.representedURL = url;
     }
+    if (_previewVisible && _shellLoaded)
+        [self pushPreviewContent]; // relative image paths resolve against the new dir
 }
 
 // ─── Read / Write ────────────────────────────────────────────────────────────
@@ -569,10 +576,38 @@
                                                     repeats:NO];
 }
 
+// The shell (CSS + JS engines) is loaded once; edits then patch the DOM via
+// window.mdUpdate so the page never navigates and scroll position survives.
 - (void)updatePreview {
     if (!_previewVisible || !_webView) return;
-    [_webView loadHTMLString:[MDPreview htmlFromMarkdown:_textView.string ?: @""]
-                     baseURL:nil];
+    if (!_shellLoaded) {
+        [_webView loadHTMLString:[MDPreview shellHTML]
+                         baseURL:[NSURL URLWithString:@"mdpreview:///"]];
+        return; // didFinishNavigation pushes the first content
+    }
+    [self pushPreviewContent];
+}
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    _shellLoaded = YES;
+    [self pushPreviewContent];
+}
+
+- (void)pushPreviewContent {
+    NSString *body = [MDPreview bodyFromMarkdown:_textView.string ?: @""];
+    NSString *base = @"";
+    if (self.fileURL) {
+        NSURLComponents *c = [NSURLComponents new];
+        c.scheme = @"mdpreview";
+        c.host   = @"";
+        c.path   = [self.fileURL.URLByDeletingLastPathComponent.path
+                    stringByAppendingString:@"/"];
+        base = c.URL.absoluteString ?: @"";
+    }
+    NSString *js = [NSString stringWithFormat:@"window.mdUpdate(%@,%@);",
+                    [MDPreview jsStringLiteral:body],
+                    [MDPreview jsStringLiteral:base]];
+    [_webView evaluateJavaScript:js completionHandler:nil];
 }
 
 // ─── validateMenuItem ─────────────────────────────────────────────────────────

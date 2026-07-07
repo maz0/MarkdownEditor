@@ -3,7 +3,8 @@ CC     := clang
 CFLAGS := -fobjc-arc -Wall -Wextra -mmacosx-version-min=12.0 -isysroot $(SDK)
 LFLAGS := -framework Cocoa -framework WebKit
 SRCS   := src/main.m src/AppDelegate.m src/MDDocument.m src/SlashMenu.m \
-           src/MDSyntaxHighlighter.m src/MDPreview.m src/MDUpdateChecker.m
+           src/MDSyntaxHighlighter.m src/MDPreview.m src/MDUpdateChecker.m \
+           src/MDSchemeHandler.m
 APP    := MarkdownEditor.app
 BIN    := $(APP)/Contents/MacOS/MarkdownEditor
 
@@ -12,7 +13,8 @@ BIN    := $(APP)/Contents/MacOS/MarkdownEditor
 VERSION := $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 
 build: $(BIN) $(APP)/Contents/Info.plist $(APP)/Contents/Resources/AppIcon.icns \
-       $(APP)/Contents/Resources/mermaid.min.js
+       $(APP)/Contents/Resources/mermaid.min.js \
+       $(APP)/Contents/Resources/highlight.min.js
 
 $(BIN): $(SRCS)
 	@mkdir -p $(APP)/Contents/MacOS
@@ -26,6 +28,10 @@ $(APP)/Contents/Resources/AppIcon.icns: MarkdownEditor.icns
 	cp $< $@
 
 $(APP)/Contents/Resources/mermaid.min.js: resources/mermaid.min.js
+	@mkdir -p $(APP)/Contents/Resources
+	cp $< $@
+
+$(APP)/Contents/Resources/highlight.min.js: resources/highlight.min.js
 	@mkdir -p $(APP)/Contents/Resources
 	cp $< $@
 
