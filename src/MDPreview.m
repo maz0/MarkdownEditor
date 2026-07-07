@@ -260,30 +260,35 @@
 
 // ─── Bundled JS engines ──────────────────────────────────────────────────────
 // Bundled mermaid is v10 — v11 needs a newer WebKit than macOS 12 ships.
+// Engines ship DEFLATE-compressed (~4:1) and are inflated once on first use;
+// a plain .js beside the binary also works (used by test harnesses).
+
++ (NSString *)engineSourceNamed:(NSString *)name {
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSURL *z = [bundle URLForResource:name withExtension:@"js.z"];
+    if (z) {
+        NSData *data = [[NSData dataWithContentsOfURL:z]
+            decompressedDataUsingAlgorithm:NSDataCompressionAlgorithmZlib error:nil];
+        if (data)
+            return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    }
+    NSURL *plain = [bundle URLForResource:name withExtension:@"js"];
+    return plain ? [NSString stringWithContentsOfURL:plain
+                                            encoding:NSUTF8StringEncoding
+                                               error:nil] : nil;
+}
 
 + (NSString *)mermaidEngineSource {
     static NSString *engine;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSURL *url = [[NSBundle mainBundle] URLForResource:@"mermaid.min" withExtension:@"js"];
-        if (url)
-            engine = [NSString stringWithContentsOfURL:url
-                                              encoding:NSUTF8StringEncoding
-                                                 error:nil];
-    });
+    dispatch_once(&once, ^{ engine = [self engineSourceNamed:@"mermaid.min"]; });
     return engine;
 }
 
 + (NSString *)hljsEngineSource {
     static NSString *engine;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSURL *url = [[NSBundle mainBundle] URLForResource:@"highlight.min" withExtension:@"js"];
-        if (url)
-            engine = [NSString stringWithContentsOfURL:url
-                                              encoding:NSUTF8StringEncoding
-                                                 error:nil];
-    });
+    dispatch_once(&once, ^{ engine = [self engineSourceNamed:@"highlight.min"]; });
     return engine;
 }
 

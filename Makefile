@@ -13,8 +13,8 @@ BIN    := $(APP)/Contents/MacOS/MarkdownEditor
 VERSION := $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 
 build: $(BIN) $(APP)/Contents/Info.plist $(APP)/Contents/Resources/AppIcon.icns \
-       $(APP)/Contents/Resources/mermaid.min.js \
-       $(APP)/Contents/Resources/highlight.min.js
+       $(APP)/Contents/Resources/mermaid.min.js.z \
+       $(APP)/Contents/Resources/highlight.min.js.z
 
 $(BIN): $(SRCS)
 	@mkdir -p $(APP)/Contents/MacOS
@@ -27,13 +27,10 @@ $(APP)/Contents/Info.plist: Info.plist
 $(APP)/Contents/Resources/AppIcon.icns: MarkdownEditor.icns
 	cp $< $@
 
-$(APP)/Contents/Resources/mermaid.min.js: resources/mermaid.min.js
+# JS engines ship DEFLATE-compressed (~4:1); MDPreview inflates at first use
+$(APP)/Contents/Resources/%.js.z: resources/%.js
 	@mkdir -p $(APP)/Contents/Resources
-	cp $< $@
-
-$(APP)/Contents/Resources/highlight.min.js: resources/highlight.min.js
-	@mkdir -p $(APP)/Contents/Resources
-	cp $< $@
+	python3 -c 'import zlib;c=zlib.compressobj(9,zlib.DEFLATED,-15);d=open("$<","rb").read();open("$@","wb").write(c.compress(d)+c.flush())'
 
 run: build
 	open $(APP)
