@@ -84,6 +84,8 @@
     toolbar.centeredItemIdentifier  = @"MDTitleItem";
     window.toolbar        = toolbar;
     window.titleVisibility = NSWindowTitleHidden;
+    if (@available(macOS 11.0, *))
+        window.toolbarStyle = NSWindowToolbarStyleUnifiedCompact;
 
     if (self.fileURL)
         window.representedURL = self.fileURL;
