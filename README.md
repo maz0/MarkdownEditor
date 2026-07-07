@@ -9,6 +9,7 @@ A lightweight, native macOS Markdown editor written in Objective-C. No Electron,
 - **Tabs** — open multiple files side by side (Cmd+T)
 - **Syntax highlighting** — headings, bold, italic, code, links, blockquotes coloured live as you type
 - **Live preview** — split-pane WebKit preview with dark mode support (Cmd+Shift+P)
+- **Mermaid diagrams** — ` ```mermaid ` code blocks render as diagrams in the preview, fully offline (bundled mermaid v10)
 - **Focus mode** — wide margins, centred 680pt column for distraction-free writing (Cmd+Shift+F)
 - **Slash commands** — type `/` on a blank line for a popup menu of Markdown templates (headings, lists, code blocks, links…)
 - **Keyboard shortcuts** — Cmd+B bold, Cmd+I italic, Cmd+K link

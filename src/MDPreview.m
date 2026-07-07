@@ -8,7 +8,9 @@
     NSMutableString *body = [NSMutableString new];
     NSArray<NSString *> *lines = [md componentsSeparatedByString:@"\n"];
 
-    BOOL inFence  = NO;
+    BOOL inFence   = NO;
+    BOOL inMermaid = NO;   // current fence is a ```mermaid block
+    BOOL usedMermaid = NO; // at least one mermaid block seen → load engine
     BOOL inUL     = NO;
     BOOL inOL     = NO;
     BOOL inTable  = NO;
@@ -27,11 +29,18 @@
                 inFence = YES;
                 NSString *lang = [raw substringFromIndex:3];
                 lang = [lang stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-                NSString *cls = lang.length ? [NSString stringWithFormat:@" class=\"language-%@\"", [self esc:lang]] : @"";
-                [body appendFormat:@"<pre><code%@>", cls];
+                if ([lang caseInsensitiveCompare:@"mermaid"] == NSOrderedSame) {
+                    inMermaid = YES;
+                    usedMermaid = YES;
+                    [body appendString:@"<pre class=\"mermaid\">"];
+                } else {
+                    NSString *cls = lang.length ? [NSString stringWithFormat:@" class=\"language-%@\"", [self esc:lang]] : @"";
+                    [body appendFormat:@"<pre><code%@>", cls];
+                }
             } else {
-                [body appendString:@"</code></pre>\n"];
-                inFence = NO;
+                [body appendString:inMermaid ? @"</pre>\n" : @"</code></pre>\n"];
+                inFence   = NO;
+                inMermaid = NO;
             }
             i++; continue;
         }
@@ -153,16 +162,44 @@
 
     [self flushPara:para into:body];
     [self closeLists:&inUL ol:&inOL table:&inTable into:body];
-    if (inFence) [body appendString:@"</code></pre>\n"];
+    if (inFence) [body appendString:inMermaid ? @"</pre>\n" : @"</code></pre>\n"];
+
+    // Load the mermaid engine only when the document actually uses it.
+    // The source is inlined rather than referenced by URL: WKWebView does not
+    // grant loadHTMLString: content read access to file:// subresources.
+    // Bundled mermaid is v10 — v11 needs a newer WebKit than macOS 12 ships.
+    NSString *mermaid = @"";
+    if (usedMermaid) {
+        NSString *engine = [self mermaidEngineSource];
+        if (engine)
+            mermaid = [NSString stringWithFormat:
+                @"<script>%@</script>"
+                @"<script>mermaid.initialize({startOnLoad:true,securityLevel:'loose',"
+                @"theme:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'});"
+                @"</script>", engine];
+    }
 
     return [NSString stringWithFormat:@"<!DOCTYPE html><html><head>"
         @"<meta charset=\"utf-8\">"
         @"<style>%@</style>"
-        @"</head><body>%@</body></html>",
-        [self css], body];
+        @"</head><body>%@%@</body></html>",
+        [self css], body, mermaid];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
++ (NSString *)mermaidEngineSource {
+    static NSString *engine;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSURL *url = [[NSBundle mainBundle] URLForResource:@"mermaid.min" withExtension:@"js"];
+        if (url)
+            engine = [NSString stringWithContentsOfURL:url
+                                              encoding:NSUTF8StringEncoding
+                                                 error:nil];
+    });
+    return engine;
+}
 
 + (void)flushPara:(NSMutableArray<NSString *> *)lines into:(NSMutableString *)out {
     if (!lines.count) return;
@@ -270,7 +307,8 @@
     @"tr:nth-child(even){background:#fafafa}"
     @"hr{border:none;border-top:1px solid #e5e5e5;margin:1.5em 0}"
     @"img{max-width:100%;border-radius:4px}"
-    @"del{color:#888}";
+    @"del{color:#888}"
+    @"pre.mermaid{background:none!important;padding:0;text-align:center;overflow:visible}";
 }
 
 @end

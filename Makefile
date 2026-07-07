@@ -9,7 +9,8 @@ BIN    := $(APP)/Contents/MacOS/MarkdownEditor
 
 .PHONY: build run clean
 
-build: $(BIN) $(APP)/Contents/Info.plist $(APP)/Contents/Resources/AppIcon.icns
+build: $(BIN) $(APP)/Contents/Info.plist $(APP)/Contents/Resources/AppIcon.icns \
+       $(APP)/Contents/Resources/mermaid.min.js
 
 $(BIN): $(SRCS)
 	@mkdir -p $(APP)/Contents/MacOS
@@ -20,6 +21,10 @@ $(APP)/Contents/Info.plist: Info.plist
 	cp $< $@
 
 $(APP)/Contents/Resources/AppIcon.icns: MarkdownEditor.icns
+	cp $< $@
+
+$(APP)/Contents/Resources/mermaid.min.js: resources/mermaid.min.js
+	@mkdir -p $(APP)/Contents/Resources
 	cp $< $@
 
 run: build
