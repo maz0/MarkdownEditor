@@ -197,6 +197,13 @@
     scroll.documentView = _textView;
     [_splitView addSubview:scroll];
 
+    // Editor scroll drives the preview (one-way sync)
+    scroll.contentView.postsBoundsChangedNotifications = YES;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(editorDidScroll:)
+                                                 name:NSViewBoundsDidChangeNotification
+                                               object:scroll.contentView];
+
     // ── Preview pane ──────────────────────────────────────────────────────
     WKWebViewConfiguration *webCfg = [WKWebViewConfiguration new];
     [webCfg setURLSchemeHandler:[MDSchemeHandler new] forURLScheme:@"mdpreview"];
@@ -769,7 +776,35 @@
     NSString *js = [NSString stringWithFormat:@"window.mdUpdate(%@,%@);",
                     [MDPreview jsStringLiteral:body],
                     [MDPreview jsStringLiteral:base]];
-    [_webView evaluateJavaScript:js completionHandler:nil];
+    [_webView evaluateJavaScript:js completionHandler:^(id r, NSError *e) {
+        [self syncPreviewScroll]; // land on the matching position once laid out
+    }];
+}
+
+- (void)editorDidScroll:(NSNotification *)note {
+    [self syncPreviewScroll];
+}
+
+- (void)syncPreviewScroll {
+    if (!_previewVisible || !_shellLoaded) return;
+    NSClipView *clip = _textView.enclosingScrollView.contentView;
+    CGFloat max = _textView.frame.size.height - clip.bounds.size.height;
+    CGFloat f   = max > 0 ? clip.bounds.origin.y / max : 0;
+    f = MAX(0, MIN(1, f));
+    [_webView evaluateJavaScript:
+        [NSString stringWithFormat:@"window.mdScrollTo(%.4f);", f]
+              completionHandler:nil];
+}
+
+// ─── Jump (outline, Find in Folder) ──────────────────────────────────────────
+
+- (void)jumpToCharacterRange:(NSRange)range {
+    NSUInteger len = _textView.string.length;
+    if (range.location > len) return;
+    range.length = MIN(range.length, len - range.location);
+    [_textView setSelectedRange:range];
+    [_textView scrollRangeToVisible:range];
+    [self.windowControllers.firstObject.window makeFirstResponder:_textView];
 }
 
 // ─── Image drop ──────────────────────────────────────────────────────────────

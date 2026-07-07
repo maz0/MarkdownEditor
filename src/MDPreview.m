@@ -60,6 +60,10 @@
         @"try{mermaid.run({querySelector:'#content .mermaid'});}catch(e){}"
         @"};"
         @"dark.addEventListener('change',function(){mmInit();window.mdUpdate(window.__last);});"
+        @"window.mdScrollTo=function(f){"
+        @"var m=document.documentElement.scrollHeight-window.innerHeight;"
+        @"if(m>0)window.scrollTo(0,f*m);"
+        @"};"
         @"</script></body></html>",
         [self css], mermaid, hljs];
 }
@@ -328,6 +332,10 @@
 
 + (NSString *)inline:(NSString *)text {
     text = [self esc:text];
+    // Videos before images (same ![...](...) syntax, decided by extension)
+    text = [self re:@"!\\[([^\\]]*?)\\]\\(([^)]*?\\.(?i:mp4|m4v|mov|webm))\\)"
+                rep:@"<video controls src=\"$2\" title=\"$1\"></video>"
+               into:text];
     // Images before links
     text = [self re:@"!\\[([^\\]]*?)\\]\\(([^)]*?)\\)"
                 rep:@"<img src=\"$2\" alt=\"$1\" style=\"max-width:100%\">"
@@ -392,6 +400,7 @@
     @"tr:nth-child(even){background:#fafafa}"
     @"hr{border:none;border-top:1px solid #e5e5e5;margin:1.5em 0}"
     @"img{max-width:100%;border-radius:4px}"
+    @"video{max-width:100%;border-radius:4px}"
     @"del{color:#888}"
     @"pre.mermaid{background:none!important;padding:0;text-align:center;overflow:visible}"
     @"li.task{list-style:none;margin-left:-1.3em}"

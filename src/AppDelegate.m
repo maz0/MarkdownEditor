@@ -1,5 +1,6 @@
 #import "AppDelegate.h"
 #import "MDUpdateChecker.h"
+#import "MDFileSearch.h"
 
 @interface AppDelegate () <NSMenuDelegate>
 @end
@@ -7,6 +8,12 @@
 @implementation AppDelegate {
     MDUpdateChecker *_updateChecker;
     NSMenu          *_recentMenu;
+    MDFileSearch    *_fileSearch;
+}
+
+- (void)findInFolder:(id)sender {
+    if (!_fileSearch) _fileSearch = [MDFileSearch new];
+    [_fileSearch show];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
@@ -137,6 +144,8 @@
     rename.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [fileMenu addItemWithTitle:@"Revert to Saved"
                         action:@selector(revertDocumentToSaved:) keyEquivalent:@""];
+    [fileMenu addItemWithTitle:@"Browse All Versions…"
+                        action:@selector(browseDocumentVersions:) keyEquivalent:@""];
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Export as HTML…" action:@selector(exportHTML:) keyEquivalent:@""];
     [fileMenu addItemWithTitle:@"Export as PDF…"  action:@selector(exportPDF:)  keyEquivalent:@""];
@@ -159,6 +168,11 @@
     NSMenuItem *findNext = [editMenu addItemWithTitle:@"Find Next"
                                                action:@selector(performFindPanelAction:) keyEquivalent:@"g"];
     findNext.tag = NSFindPanelActionNext;
+    NSMenuItem *findFolder = [editMenu addItemWithTitle:@"Find in Folder…"
+                                                 action:@selector(findInFolder:)
+                                          keyEquivalent:@"f"];
+    findFolder.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+    findFolder.target = self;
     [editMenu addItem:[NSMenuItem separatorItem]];
     [editMenu addItemWithTitle:@"Bold"   action:@selector(mdBold:)   keyEquivalent:@"b"];
     [editMenu addItemWithTitle:@"Italic" action:@selector(mdItalic:) keyEquivalent:@"i"];

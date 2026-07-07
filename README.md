@@ -8,7 +8,7 @@ A lightweight, native macOS Markdown editor written in Objective-C. No Electron,
 
 - **Tabs** — open multiple files side by side (Cmd+T)
 - **Syntax highlighting** — headings, bold, italic, code, links, blockquotes coloured live as you type
-- **Live preview** — split-pane WebKit preview with dark mode support (Cmd+Shift+P); scroll position survives edits, local images render, task lists become checkboxes
+- **Live preview** — split-pane WebKit preview with dark mode support (Cmd+Shift+P); scroll-synced to the editor, local images and videos render, task lists become checkboxes
 - **Mermaid diagrams** — ` ```mermaid ` code blocks render as diagrams in the preview, fully offline (bundled mermaid v10)
 - **Code highlighting in preview** — fenced code blocks coloured by bundled highlight.js
 - **Outline sidebar** — jump between headings (Cmd+Shift+O)
@@ -21,7 +21,8 @@ A lightweight, native macOS Markdown editor written in Objective-C. No Electron,
 - **Font size control** — Cmd++ / Cmd+- / Cmd+0 to reset
 - **Word & character count** — live status bar showing words, chars, line and column
 - **Dark / light mode** — toggle from the View menu, preference remembered across restarts
-- **Open, save, rename** — full NSDocument integration with autosave, Versions, and an Open Recent menu
+- **Open, save, rename** — full NSDocument integration with autosave, Versions (File → Browse All Versions…), and an Open Recent menu
+- **Find in Folder** — search every markdown/text file in the document's folder (Cmd+Opt+F), click a result to jump to it
 - **Update notifications** — checks GitHub releases once a day and offers new versions; manual check via Markdown Editor → Check for Updates…
 
 ## Requirements
