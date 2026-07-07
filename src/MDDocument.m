@@ -3,14 +3,16 @@
 #import "MDSyntaxHighlighter.h"
 #import "MDPreview.h"
 #import "MDSchemeHandler.h"
+#import "MDTextView.h"
 #import <WebKit/WebKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-@interface MDDocument () <SlashMenuDelegate, WKNavigationDelegate>
+@interface MDDocument () <SlashMenuDelegate, WKNavigationDelegate, MDTextViewDropDelegate>
 @end
 
 @implementation MDDocument {
     // Core editor
-    NSTextView          *_textView;
+    MDTextView          *_textView;
     NSString            *_content;
 
     // Toolbar title
@@ -43,6 +45,11 @@
     BOOL                 _previewVisible;
     BOOL                 _shellLoaded;
     NSTimer             *_previewTimer;
+
+    // PDF export (kept alive for the duration of the render)
+    WKWebView           *_exportWebView;
+    NSWindow            *_exportWindow;
+    NSURL               *_exportPDFURL;
 }
 
 // ─── NSDocument lifecycle ────────────────────────────────────────────────────
@@ -62,7 +69,7 @@
     return self;
 }
 
-+ (BOOL)autosavesInPlace { return NO; }
++ (BOOL)autosavesInPlace { return YES; }
 
 - (void)makeWindowControllers {
     // ── Window ────────────────────────────────────────────────────────────
@@ -129,9 +136,10 @@
     scroll.autohidesScrollers  = YES;
     scroll.borderType          = NSNoBorder;
 
-    _textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0,
+    _textView = [[MDTextView alloc] initWithFrame:NSMakeRect(0, 0,
                                                               scroll.contentSize.width,
                                                               scroll.contentSize.height)];
+    _textView.dropDelegate = self;
     _textView.minSize               = NSMakeSize(0, scroll.contentSize.height);
     _textView.maxSize               = NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX);
     _textView.verticallyResizable   = YES;
@@ -405,7 +413,39 @@
     [self runHighlighter];
     [self updateStatusBar];
     [self checkSlashTrigger];
+    if (_focusMode) [self centerCaretLine];
     if (_previewVisible) [self schedulePreviewUpdate];
+}
+
+// Typewriter scrolling: while writing in focus mode, keep the caret line
+// vertically centred instead of letting it sink to the bottom edge.
+- (void)centerCaretLine {
+    NSLayoutManager *lm  = _textView.layoutManager;
+    NSString *text       = _textView.string;
+    NSUInteger loc       = _textView.selectedRange.location;
+
+    NSRect line;
+    if (loc >= text.length) {
+        if (lm.extraLineFragmentTextContainer)
+            line = lm.extraLineFragmentRect;
+        else if (text.length == 0)
+            return;
+        else
+            line = [lm lineFragmentRectForGlyphAtIndex:
+                    [lm glyphIndexForCharacterAtIndex:text.length - 1]
+                                        effectiveRange:NULL];
+    } else {
+        line = [lm lineFragmentRectForGlyphAtIndex:
+                [lm glyphIndexForCharacterAtIndex:loc]
+                                    effectiveRange:NULL];
+    }
+
+    NSClipView *clip = _textView.enclosingScrollView.contentView;
+    CGFloat caretY = NSMidY(line) + _textView.textContainerInset.height;
+    CGFloat target = caretY - clip.bounds.size.height / 2;
+    target = MAX(0, MIN(target, _textView.frame.size.height - clip.bounds.size.height));
+    [clip scrollToPoint:NSMakePoint(clip.bounds.origin.x, target)];
+    [_textView.enclosingScrollView reflectScrolledClipView:clip];
 }
 
 - (void)textViewDidChangeSelection:(NSNotification *)note {
@@ -589,25 +629,165 @@
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    _shellLoaded = YES;
-    [self pushPreviewContent];
+    if (webView == _webView) {
+        _shellLoaded = YES;
+        [self pushPreviewContent];
+    } else if (webView == _exportWebView) {
+        // Give mermaid a moment to render diagrams before capturing
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ [self finishPDFExport]; });
+    }
 }
 
 - (void)pushPreviewContent {
     NSString *body = [MDPreview bodyFromMarkdown:_textView.string ?: @""];
-    NSString *base = @"";
-    if (self.fileURL) {
-        NSURLComponents *c = [NSURLComponents new];
-        c.scheme = @"mdpreview";
-        c.host   = @"";
-        c.path   = [self.fileURL.URLByDeletingLastPathComponent.path
-                    stringByAppendingString:@"/"];
-        base = c.URL.absoluteString ?: @"";
-    }
+    NSString *base = [self previewBaseURL].absoluteString ?: @"";
     NSString *js = [NSString stringWithFormat:@"window.mdUpdate(%@,%@);",
                     [MDPreview jsStringLiteral:body],
                     [MDPreview jsStringLiteral:base]];
     [_webView evaluateJavaScript:js completionHandler:nil];
+}
+
+// ─── Image drop ──────────────────────────────────────────────────────────────
+
+- (NSString *)markdownForDroppedImageAtURL:(NSURL *)url {
+    NSString *alt = [url.lastPathComponent stringByDeletingPathExtension];
+
+    // Unsaved document: reference the image where it is, by absolute path
+    // (resolves through the mdpreview:// base in the preview).
+    if (!self.fileURL)
+        return [NSString stringWithFormat:@"![%@](%@)", alt,
+                [url.path stringByAddingPercentEncodingWithAllowedCharacters:
+                 NSCharacterSet.URLPathAllowedCharacterSet]];
+
+    // Saved document: copy the image beside it (unless it's already there)
+    // and reference it relatively.
+    NSFileManager *fm  = NSFileManager.defaultManager;
+    NSURL *dir         = self.fileURL.URLByDeletingLastPathComponent;
+    NSString *name     = url.lastPathComponent;
+    NSURL *dest        = [dir URLByAppendingPathComponent:name];
+
+    if (![dest.path isEqualToString:url.path]) {
+        NSUInteger n = 1;
+        while ([fm fileExistsAtPath:dest.path] &&
+               ![fm contentsEqualAtPath:dest.path andPath:url.path]) {
+            name = [NSString stringWithFormat:@"%@-%lu.%@",
+                    [url.lastPathComponent stringByDeletingPathExtension],
+                    (unsigned long)n++, url.pathExtension];
+            dest = [dir URLByAppendingPathComponent:name];
+        }
+        if (![fm fileExistsAtPath:dest.path]) {
+            NSError *err = nil;
+            if (![fm copyItemAtURL:url toURL:dest error:&err]) {
+                [self presentError:err];
+                return nil;
+            }
+        }
+    }
+    return [NSString stringWithFormat:@"![%@](%@)", alt,
+            [name stringByAddingPercentEncodingWithAllowedCharacters:
+             NSCharacterSet.URLPathAllowedCharacterSet]];
+}
+
+// ─── Export ──────────────────────────────────────────────────────────────────
+
+- (NSString *)exportBaseName {
+    return self.fileURL
+        ? [self.fileURL.lastPathComponent stringByDeletingPathExtension]
+        : [self.displayName stringByDeletingPathExtension];
+}
+
+- (NSURL *)previewBaseURL {
+    if (!self.fileURL) return nil;
+    NSURLComponents *c = [NSURLComponents new];
+    c.scheme = @"mdpreview";
+    c.host   = @"";
+    c.path   = [self.fileURL.URLByDeletingLastPathComponent.path
+                stringByAppendingString:@"/"];
+    return c.URL;
+}
+
+- (void)exportHTML:(id)sender {
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    panel.allowedContentTypes = @[UTTypeHTML];
+    panel.nameFieldStringValue = [[self exportBaseName] stringByAppendingPathExtension:@"html"];
+    [panel beginSheetModalForWindow:self.windowControllers.firstObject.window
+                  completionHandler:^(NSModalResponse r) {
+        if (r != NSModalResponseOK || !panel.URL) return;
+        NSString *html = [MDPreview htmlFromMarkdown:self->_textView.string ?: @""];
+        NSError *err = nil;
+        if (![html writeToURL:panel.URL atomically:YES
+                     encoding:NSUTF8StringEncoding error:&err])
+            [self presentError:err];
+    }];
+}
+
+- (void)exportPDF:(id)sender {
+    if (_exportWebView) return; // one export at a time
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    panel.allowedContentTypes = @[UTTypePDF];
+    panel.nameFieldStringValue = [[self exportBaseName] stringByAppendingPathExtension:@"pdf"];
+    [panel beginSheetModalForWindow:self.windowControllers.firstObject.window
+                  completionHandler:^(NSModalResponse r) {
+        if (r != NSModalResponseOK || !panel.URL) return;
+        [self renderPDFToURL:panel.URL];
+    }];
+}
+
+- (void)renderPDFToURL:(NSURL *)url {
+    _exportPDFURL = url;
+
+    WKWebViewConfiguration *cfg = [WKWebViewConfiguration new];
+    [cfg setURLSchemeHandler:[MDSchemeHandler new] forURLScheme:@"mdpreview"];
+    _exportWebView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 650, 850)
+                                        configuration:cfg];
+    _exportWebView.navigationDelegate = self;
+
+    // WKWebView only prints when attached to a window; keep it offscreen
+    _exportWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(-2000, -2000, 650, 850)
+                                                styleMask:NSWindowStyleMaskBorderless
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:NO];
+    _exportWindow.contentView = _exportWebView;
+
+    [_exportWebView loadHTMLString:[MDPreview htmlFromMarkdown:_textView.string ?: @""]
+                           baseURL:[self previewBaseURL]];
+    // didFinishNavigation → runPDFPrintOperation
+}
+
+// createPDFWithConfiguration: produces one continuous page (no pagination),
+// but NSPrintOperation on a WKWebView is broken on this macOS — it spins
+// producing a multi-GB file. Resize the view to the full content height
+// first, since createPDF only captures the view bounds.
+- (void)finishPDFExport {
+    [_exportWebView evaluateJavaScript:@"document.documentElement.scrollHeight"
+                     completionHandler:^(id height, NSError *err) {
+        CGFloat h = [height isKindOfClass:NSNumber.class] ? [height doubleValue] : 850;
+        NSRect frame = NSMakeRect(0, 0, self->_exportWebView.frame.size.width,
+                                  MAX(h, 100));
+        [self->_exportWindow setFrame:NSMakeRect(-3000, -3000, frame.size.width,
+                                                 frame.size.height) display:NO];
+        self->_exportWebView.frame = frame;
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            WKPDFConfiguration *cfg = [WKPDFConfiguration new];
+            [self->_exportWebView createPDFWithConfiguration:cfg
+                                           completionHandler:^(NSData *pdf, NSError *e) {
+                if (pdf) {
+                    NSError *werr = nil;
+                    if (![pdf writeToURL:self->_exportPDFURL
+                                 options:NSDataWritingAtomic error:&werr])
+                        [self presentError:werr];
+                } else if (e) {
+                    [self presentError:e];
+                }
+                self->_exportWebView = nil;
+                self->_exportWindow  = nil;
+                self->_exportPDFURL  = nil;
+            }];
+        });
+    }];
 }
 
 // ─── validateMenuItem ─────────────────────────────────────────────────────────

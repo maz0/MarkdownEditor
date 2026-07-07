@@ -1,8 +1,12 @@
 #import "AppDelegate.h"
 #import "MDUpdateChecker.h"
 
+@interface AppDelegate () <NSMenuDelegate>
+@end
+
 @implementation AppDelegate {
     MDUpdateChecker *_updateChecker;
+    NSMenu          *_recentMenu;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
@@ -22,6 +26,41 @@
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app {
     return YES;
+}
+
+// ─── Open Recent ─────────────────────────────────────────────────────────────
+// NSDocumentController tracks recents automatically; a hand-built menu bar
+// just doesn't get the standard submenu for free, so populate it on demand.
+
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+    if (menu != _recentMenu) return;
+    [menu removeAllItems];
+    NSArray<NSURL *> *recents = [NSDocumentController sharedDocumentController].recentDocumentURLs;
+    for (NSURL *url in recents) {
+        NSMenuItem *item = [menu addItemWithTitle:url.lastPathComponent
+                                           action:@selector(openRecentDocument:)
+                                    keyEquivalent:@""];
+        item.target            = self;
+        item.representedObject = url;
+        item.toolTip           = url.path;
+        NSImage *icon = [[NSWorkspace sharedWorkspace] iconForFile:url.path];
+        icon.size = NSMakeSize(16, 16);
+        item.image = icon;
+    }
+    if (recents.count) [menu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *clear = [menu addItemWithTitle:@"Clear Menu"
+                                        action:@selector(clearRecentDocuments:)
+                                 keyEquivalent:@""];
+    clear.enabled = recents.count > 0;
+}
+
+- (void)openRecentDocument:(NSMenuItem *)item {
+    [[NSDocumentController sharedDocumentController]
+        openDocumentWithContentsOfURL:item.representedObject
+                              display:YES
+                    completionHandler:^(NSDocument *doc, BOOL alreadyOpen, NSError *err) {
+        if (err) [NSApp presentError:err];
+    }];
 }
 
 - (void)newTab:(id)sender {
@@ -81,6 +120,11 @@
     [fileMenu addItemWithTitle:@"New"      action:@selector(newDocument:)     keyEquivalent:@"n"];
     [fileMenu addItemWithTitle:@"New Tab"  action:@selector(newTab:) keyEquivalent:@"t"];
     [fileMenu addItemWithTitle:@"Open…"   action:@selector(openDocument:)    keyEquivalent:@"o"];
+    NSMenuItem *recentItem = [fileMenu addItemWithTitle:@"Open Recent"
+                                                 action:nil keyEquivalent:@""];
+    _recentMenu = [[NSMenu alloc] initWithTitle:@"Open Recent"];
+    _recentMenu.delegate = self; // populated on demand in menuNeedsUpdate:
+    recentItem.submenu = _recentMenu;
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Close"        action:@selector(performClose:)          keyEquivalent:@"w"];
     [fileMenu addItemWithTitle:@"Save"         action:@selector(saveDocument:)          keyEquivalent:@"s"];
@@ -93,6 +137,9 @@
     rename.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [fileMenu addItemWithTitle:@"Revert to Saved"
                         action:@selector(revertDocumentToSaved:) keyEquivalent:@""];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    [fileMenu addItemWithTitle:@"Export as HTML…" action:@selector(exportHTML:) keyEquivalent:@""];
+    [fileMenu addItemWithTitle:@"Export as PDF…"  action:@selector(exportPDF:)  keyEquivalent:@""];
     fileItem.submenu = fileMenu;
     [bar addItem:fileItem];
 
